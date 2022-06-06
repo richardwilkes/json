@@ -42,3 +42,24 @@ func (o tagOptions) Contains(optionName string) bool {
 	}
 	return false
 }
+
+// PrefixedValue reports whether a comma-separated list of options
+// contains a particular substr flag with the given prefix.
+func (o tagOptions) PrefixedValue(optionPrefix string) string {
+	if len(o) == 0 {
+		return ""
+	}
+	s := string(o)
+	for s != "" {
+		var next string
+		i := strings.Index(s, ",")
+		if i >= 0 {
+			s, next = s[:i], s[i+1:]
+		}
+		if strings.HasPrefix(s, optionPrefix) {
+			return strings.TrimPrefix(s, optionPrefix)
+		}
+		s = next
+	}
+	return ""
+}

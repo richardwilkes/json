@@ -103,6 +103,10 @@ type Omitter interface {
 //   // Field appears in JSON as key "-".
 //   Field int `json:"-,"`
 //
+//   // Field will be written as "myName", but can be loaded by either
+//   // "myName" or "myOtherName" as keys in the input data.
+//   Field int `json:"myName,alt=myOtherName`
+//
 // The "string" option signals that a field is stored as JSON inside a
 // JSON-encoded string. It applies only to fields of string, floating point,
 // integer, or boolean types. This extra level of encoding is sometimes used
@@ -1279,6 +1283,9 @@ type field struct {
 	nameBytes []byte                 // []byte(name)
 	equalFold func(s, t []byte) bool // bytes.EqualFold or equivalent
 
+	altNameBytes []byte                 // []byte(altName)
+	altEqualFold func(s, t []byte) bool // bytes.EqualFold or equivalent
+
 	nameNonEsc  string // `"` + name + `":`
 	nameEscHTML string // `"` + HTMLEscape(name) + `":`
 
@@ -1395,7 +1402,7 @@ func typeFields(t reflect.Type) structFields {
 					if name == "" {
 						name = sf.Name
 					}
-					field := field{
+					fld := field{
 						name:      name,
 						tag:       tagged,
 						index:     index,
@@ -1403,18 +1410,24 @@ func typeFields(t reflect.Type) structFields {
 						omitEmpty: opts.Contains("omitempty"),
 						quoted:    quoted,
 					}
-					field.nameBytes = []byte(field.name)
-					field.equalFold = foldFunc(field.nameBytes)
+					fld.nameBytes = []byte(fld.name)
+					fld.equalFold = foldFunc(fld.nameBytes)
+
+					// Check for alt naming
+					if alt := opts.PrefixedValue("alt="); alt != "" {
+						fld.altNameBytes = []byte(alt)
+						fld.altEqualFold = foldFunc(fld.altNameBytes)
+					}
 
 					// Build nameEscHTML and nameNonEsc ahead of time.
 					nameEscBuf.Reset()
 					nameEscBuf.WriteString(`"`)
-					HTMLEscape(&nameEscBuf, field.nameBytes)
+					HTMLEscape(&nameEscBuf, fld.nameBytes)
 					nameEscBuf.WriteString(`":`)
-					field.nameEscHTML = nameEscBuf.String()
-					field.nameNonEsc = `"` + field.name + `":`
+					fld.nameEscHTML = nameEscBuf.String()
+					fld.nameNonEsc = `"` + fld.name + `":`
 
-					fields = append(fields, field)
+					fields = append(fields, fld)
 					if count[f.typ] > 1 {
 						// If there were multiple instances, add a second,
 						// so that the annihilation code will see a duplicate.

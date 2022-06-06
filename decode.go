@@ -748,9 +748,9 @@ func (d *decodeState) object(v reflect.Value) error {
 			} else {
 				// Fall back to the expensive case-insensitive
 				// linear search.
-				for i := range fields.list {
+				for i = range fields.list {
 					ff := &fields.list[i]
-					if ff.equalFold(ff.nameBytes, key) {
+					if ff.equalFold(ff.nameBytes, key) || (len(ff.altNameBytes) > 0 && ff.altEqualFold(ff.altNameBytes, key)) {
 						f = ff
 						break
 					}
@@ -904,7 +904,7 @@ var numberType = reflect.TypeOf(Number(""))
 func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool) error {
 	// Check for unmarshaler.
 	if len(item) == 0 {
-		//Empty string given
+		// Empty string given
 		d.saveError(fmt.Errorf("json: invalid use of ,string struct tag, trying to unmarshal %q into %v", item, v.Type()))
 		return nil
 	}

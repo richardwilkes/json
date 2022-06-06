@@ -118,3 +118,27 @@ func TestStructTagObjectKey(t *testing.T) {
 		}
 	}
 }
+
+func TestAltTagKey(t *testing.T) {
+	type foo struct {
+		A int `json:"a,alt=foo,omitempty"`
+		B int `json:"b,omitempty"`
+	}
+	var f1 foo
+	input1 := []byte(`{"a":1,"b":2}`)
+	if err := Unmarshal(input1, &f1); err != nil {
+		t.Fatalf("Unmarshal(%#q) failed: %v", input1, err)
+	}
+	if f1.A != 1 || f1.B != 2 {
+		t.Fatalf("Unmarshal(%#q) failed: %v", input1, f1)
+	}
+
+	var f2 foo
+	input2 := []byte(`{"foo":3,"b":4}`)
+	if err := Unmarshal(input2, &f2); err != nil {
+		t.Fatalf("Unmarshal(%#q) failed: %v", input2, err)
+	}
+	if f2.A != 3 || f2.B != 4 {
+		t.Fatalf("Unmarshal(%#q) failed: %v", input2, f2)
+	}
+}
