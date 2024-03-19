@@ -84,35 +84,35 @@ type Omitter interface {
 //
 // Examples of struct field tags and their meanings:
 //
-//   // Field appears in JSON as key "myName".
-//   Field int `json:"myName"`
+//	// Field appears in JSON as key "myName".
+//	Field int `json:"myName"`
 //
-//   // Field appears in JSON as key "myName" and
-//   // the field is omitted from the object if its value is empty,
-//   // as defined above.
-//   Field int `json:"myName,omitempty"`
+//	// Field appears in JSON as key "myName" and
+//	// the field is omitted from the object if its value is empty,
+//	// as defined above.
+//	Field int `json:"myName,omitempty"`
 //
-//   // Field appears in JSON as key "Field" (the default), but
-//   // the field is skipped if empty.
-//   // Note the leading comma.
-//   Field int `json:",omitempty"`
+//	// Field appears in JSON as key "Field" (the default), but
+//	// the field is skipped if empty.
+//	// Note the leading comma.
+//	Field int `json:",omitempty"`
 //
-//   // Field is ignored by this package.
-//   Field int `json:"-"`
+//	// Field is ignored by this package.
+//	Field int `json:"-"`
 //
-//   // Field appears in JSON as key "-".
-//   Field int `json:"-,"`
+//	// Field appears in JSON as key "-".
+//	Field int `json:"-,"`
 //
-//   // Field will be written as "myName", but can be loaded by either
-//   // "myName" or "myOtherName" as keys in the input data.
-//   Field int `json:"myName,alt=myOtherName`
+//	// Field will be written as "myName", but can be loaded by either
+//	// "myName" or "myOtherName" as keys in the input data.
+//	Field int `json:"myName,alt=myOtherName`
 //
 // The "string" option signals that a field is stored as JSON inside a
 // JSON-encoded string. It applies only to fields of string, floating point,
 // integer, or boolean types. This extra level of encoding is sometimes used
 // when communicating with JavaScript programs:
 //
-//    Int64String int64 `json:",string"`
+//	Int64String int64 `json:",string"`
 //
 // The key name will be used if it's a non-empty string consisting of
 // only Unicode letters, digits, and ASCII punctuation except quotation
@@ -165,7 +165,6 @@ type Omitter interface {
 // JSON cannot represent cyclic data structures and Marshal does not
 // handle them. Passing cyclic structures to Marshal will result in
 // an error.
-//
 func Marshal(v interface{}) ([]byte, error) {
 	e := newEncodeState()
 
@@ -296,20 +295,6 @@ type UnsupportedValueError struct {
 
 func (e *UnsupportedValueError) Error() string {
 	return "json: unsupported value: " + e.Str
-}
-
-// Before Go 1.2, an InvalidUTF8Error was returned by Marshal when
-// attempting to encode a string value with invalid UTF-8 sequences.
-// As of Go 1.2, Marshal instead coerces the string to valid UTF-8 by
-// replacing invalid bytes with the Unicode replacement rune U+FFFD.
-//
-// Deprecated: No longer used; kept for compatibility.
-type InvalidUTF8Error struct {
-	S string // the whole string value that caused the error
-}
-
-func (e *InvalidUTF8Error) Error() string {
-	return "json: invalid UTF-8 in string: " + strconv.Quote(e.S)
 }
 
 // A MarshalerError represents an error from calling a MarshalJSON or MarshalText method.
