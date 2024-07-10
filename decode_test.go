@@ -2607,3 +2607,22 @@ func TestUnmarshalWithContext(t *testing.T) {
 		t.Fatal("unexpected result: " + testData.Data)
 	}
 }
+
+func TestUnmarshalAlt(t *testing.T) {
+	type T struct {
+		A int `json:"a,alt=old_a"`
+	}
+	var v T
+	if err := Unmarshal([]byte(`{"a": 1}`), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.A != 1 {
+		t.Fatal("unexpected result: ", v.A)
+	}
+	if err := Unmarshal([]byte(`{"old_a": 2}`), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.A != 2 {
+		t.Fatal("unexpected result: ", v.A)
+	}
+}
