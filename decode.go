@@ -53,8 +53,8 @@ import (
 //   - bool, for JSON booleans
 //   - float64, for JSON numbers
 //   - string, for JSON strings
-//   - []interface{}, for JSON arrays
-//   - map[string]interface{}, for JSON objects
+//   - []any, for JSON arrays
+//   - map[string]any, for JSON objects
 //   - nil for JSON null
 //
 // To unmarshal a JSON array into a slice, Unmarshal resets the slice length
@@ -73,8 +73,7 @@ import (
 // use. If the map is nil, Unmarshal allocates a new map. Otherwise Unmarshal
 // reuses the existing map, keeping existing entries. Unmarshal then stores
 // key-value pairs from the JSON object into the map. The map's key type must
-// either be any string type, an integer, implement [json.Unmarshaler], or
-// implement [encoding.TextUnmarshaler].
+// either be any string type, an integer, or implement [encoding.TextUnmarshaler].
 //
 // If the JSON-encoded data contain a syntax error, Unmarshal returns a [SyntaxError].
 //
@@ -96,18 +95,7 @@ import (
 // Instead, they are replaced by the Unicode replacement
 // character U+FFFD.
 func Unmarshal(data []byte, v any) error {
-	// Check for well-formedness.
-	// Avoids filling out half a data structure
-	// before discovering a JSON syntax error.
-	var d decodeState
-	d.ctx = context.Background()
-	err := checkValid(data, &d.scan)
-	if err != nil {
-		return err
-	}
-
-	d.init(data)
-	return d.unmarshal(v)
+	return UnmarshalWithContext(context.Background(), data, v)
 }
 
 // UnmarshalWithContext is like [Unmarshal] but allows a context to be passed through.
@@ -117,11 +105,7 @@ func UnmarshalWithContext(ctx context.Context, data []byte, v interface{}) error
 	// Avoids filling out half a data structure
 	// before discovering a JSON syntax error.
 	var d decodeState
-	if ctx == nil {
-		d.ctx = context.Background()
-	} else {
-		d.ctx = ctx
-	}
+	d.ctx = ctx
 	err := checkValid(data, &d.scan)
 	if err != nil {
 		return err
@@ -136,9 +120,6 @@ func UnmarshalWithContext(ctx context.Context, data []byte, v interface{}) error
 // The input can be assumed to be a valid encoding of
 // a JSON value. UnmarshalJSON must copy the JSON data
 // if it wishes to retain the data after returning.
-//
-// By convention, to approximate the behavior of [Unmarshal] itself,
-// Unmarshalers implement UnmarshalJSON([]byte("null")) as a no-op.
 type Unmarshaler interface {
 	UnmarshalJSON([]byte) error
 }
@@ -156,7 +137,7 @@ type UnmarshalTypeError struct {
 	Type   reflect.Type // type of Go value it could not be assigned to
 	Offset int64        // error occurred after reading Offset bytes
 	Struct string       // name of the struct type containing the field
-	Field  string       // the full path from root node to the field
+	Field  string       // the full path from root node to the field, include embedded struct
 }
 
 func (e *UnmarshalTypeError) Error() string {
@@ -271,7 +252,11 @@ func (d *decodeState) addErrorContext(err error) error {
 		switch err := err.(type) {
 		case *UnmarshalTypeError:
 			err.Struct = d.errorContext.Struct.Name()
-			err.Field = strings.Join(d.errorContext.FieldStack, ".")
+			fieldStack := d.errorContext.FieldStack
+			if err.Field != "" {
+				fieldStack = append(fieldStack, err.Field)
+			}
+			err.Field = strings.Join(fieldStack, ".")
 		}
 	}
 	return err
@@ -482,9 +467,9 @@ func indirect(v reflect.Value, decodingNull bool) (UnmarshalerWithContext, Unmar
 		}
 
 		// Prevent infinite loop if v is an interface pointing to its own address:
-		//     var v interface{}
+		//     var v any
 		//     v = &v
-		if v.Elem().Kind() == reflect.Interface && v.Elem().Elem() == v {
+		if v.Elem().Kind() == reflect.Interface && v.Elem().Elem().Equal(v) {
 			v = v.Elem()
 			break
 		}
@@ -726,7 +711,10 @@ func (d *decodeState) object(v reflect.Value) error {
 			if f != nil {
 				subv = v
 				destring = f.quoted
-				for _, i := range f.index {
+				if d.errorContext == nil {
+					d.errorContext = new(errorContext)
+				}
+				for i, ind := range f.index {
 					if subv.Kind() == reflect.Pointer {
 						if subv.IsNil() {
 							// If a struct embeds a pointer to an unexported type,
@@ -746,13 +734,16 @@ func (d *decodeState) object(v reflect.Value) error {
 						}
 						subv = subv.Elem()
 					}
-					subv = subv.Field(i)
+					if i < len(f.index)-1 {
+						d.errorContext.FieldStack = append(
+							d.errorContext.FieldStack,
+							subv.Type().Field(ind).Name,
+						)
+					}
+					subv = subv.Field(ind)
 				}
-				if d.errorContext == nil {
-					d.errorContext = new(errorContext)
-				}
-				d.errorContext.FieldStack = append(d.errorContext.FieldStack, f.name)
 				d.errorContext.Struct = t
+				d.errorContext.FieldStack = append(d.errorContext.FieldStack, f.name)
 			} else if d.disallowUnknownFields {
 				d.saveError(fmt.Errorf("json: unknown field %q", key))
 			}
@@ -805,7 +796,7 @@ func (d *decodeState) object(v reflect.Value) error {
 				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 					s := string(key)
 					n, err := strconv.ParseInt(s, 10, 64)
-					if err != nil || reflect.Zero(kt).OverflowInt(n) {
+					if err != nil || kt.OverflowInt(n) {
 						d.saveError(&UnmarshalTypeError{Value: "number " + s, Type: kt, Offset: int64(start + 1)})
 						break
 					}
@@ -814,7 +805,7 @@ func (d *decodeState) object(v reflect.Value) error {
 				case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 					s := string(key)
 					n, err := strconv.ParseUint(s, 10, 64)
-					if err != nil || reflect.Zero(kt).OverflowUint(n) {
+					if err != nil || kt.OverflowUint(n) {
 						d.saveError(&UnmarshalTypeError{Value: "number " + s, Type: kt, Offset: int64(start + 1)})
 						break
 					}
@@ -975,10 +966,11 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 			}
 			v.SetBytes(b[:n])
 		case reflect.String:
-			if v.Type() == numberType && !isValidNumber(string(s)) {
+			t := string(s)
+			if v.Type() == numberType && !isValidNumber(t) {
 				return fmt.Errorf("json: invalid number literal, trying to unmarshal %q into Number", item)
 			}
-			v.SetString(string(s))
+			v.SetString(t)
 		case reflect.Interface:
 			if v.NumMethod() == 0 {
 				v.Set(reflect.ValueOf(string(s)))
@@ -1050,7 +1042,7 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 // in an empty interface. They are not strictly necessary,
 // but they avoid the weight of reflection in this common case.
 
-// valueInterface is like value but returns interface{}
+// valueInterface is like value but returns any.
 func (d *decodeState) valueInterface() (val any) {
 	switch d.opcode {
 	default:
@@ -1067,7 +1059,7 @@ func (d *decodeState) valueInterface() (val any) {
 	return
 }
 
-// arrayInterface is like array but returns []interface{}.
+// arrayInterface is like array but returns []any.
 func (d *decodeState) arrayInterface() []any {
 	var v = make([]any, 0)
 	for {
@@ -1093,7 +1085,7 @@ func (d *decodeState) arrayInterface() []any {
 	return v
 }
 
-// objectInterface is like object but returns map[string]interface{}.
+// objectInterface is like object but returns map[string]any.
 func (d *decodeState) objectInterface() map[string]any {
 	m := make(map[string]any)
 	for {
